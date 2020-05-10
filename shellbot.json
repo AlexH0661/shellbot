@@ -1,0 +1,31 @@
+{
+    "slack": {
+        "slackHook":"https://hooks.slack.com/services/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",
+        "botName": "ShellBot",
+        "channel": "#sandbox"
+    },
+    "discord": {
+        "discordHook": "https://discordapp.com/api/webhooks/694094785899790406/0do6H-BWUkJpxTqNvcZmWyd5z2jOGGw0eG1dkPjNhnlksP32vbFzRQqyFSN9jPMbCDB6?wait=true"
+    },
+    "teams": {
+        "teamsHook": "https://outlook.office.com/webhook/<randomstuff>"
+    },
+    "ShellBot": {
+        "sleepTime": "60"
+    },
+    "empire": {
+        "db": "/opt/Empire/data/empire.db"
+    },
+    "msf": {
+        "msfRpcHost": "127.0.0.1",
+        "msfRpcPort": "55552",
+        "msfRpcUser": "msf",
+        "msfRpcPass": "Password1"
+    },
+    "covenant": {
+        "host": "127.0.0.1",
+        "port": "7443",
+        "user": "",
+        "pass": "password"
+    }
+}
