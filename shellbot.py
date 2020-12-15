@@ -4,7 +4,7 @@ __author__ = 'Russel Van Tuyl'
 __maintainer__ = "Russel Van Tuyl"
 __email__ = "Russel.VanTuyl@gmail.com"
 __updated__ = "AlexH0661"
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 
 import sqlite3
 import datetime
@@ -14,6 +14,7 @@ import sys
 import os
 import argparse
 import json
+import signal
 import socket
 import subprocess
 import ssl
@@ -33,13 +34,12 @@ args = parser.parse_args()
 
 cur_datetime = datetime.datetime.now()
 formatted_datetime = cur_datetime.strftime("%Y-%m-%d-%H%M%S")
-cur_dir = os.getcwd()
-os.makedirs('{}/logs'.format(cur_dir), exist_ok=True)
+os.makedirs('logs', exist_ok=True)
 
 logging.basicConfig(level=logging.DEBUG,
                     format='%(asctime)s [%(name)s / %(levelname)s]: %(message)s',
                     datefmt='%Y-%m-%d %H:%M:%S',
-                    filename='{0}/logs/{1}.log'.format(cur_dir, formatted_datetime),
+                    filename=f'logs/{formatted_datetime}.log',
                     filemode='w')
 console = logging.StreamHandler()
 if args.verbose:
@@ -70,13 +70,14 @@ botName = None
 discordHook = None
 channel = None
 empireDb = None
+poshc2Db = None
 msfRpcHost = "127.0.0.1"
 msfRpcPort = "55552"
 msfRpcUser = "msf"
 msfRpcPass = None
 msfRpcToken = None
 covApiToken = None
-knownAgents = {"empire": [], "msf": [], "covenant": []}
+knownAgents = {"empire": [], "msf": [], "covenant": [], "poshc2": []}
 host_name = ""
 host_ip = ""
 
@@ -165,12 +166,12 @@ def post_msg_discord(msg, status=None, colour='15776264'):
     data = {}
     data["tts"] = "true"
     data["username"] = "ShellBot - " + host_name
-    data["avatar_url"] = "https://www.jing.fm/clipimg/full/12-125257_baby-sea-turtle-clipart-cute-easy-turtle-drawings.png"
+    data["avatar_url"] = "https://cdn3.vectorstock.com/i/1000x1000/78/02/cartoon-turtle-vector-4367802.jpg"
     data["embeds"] = []
     embed = {}
     embed["color"] = colour
-    embed["title"] = "ShellBot {} on ".format(status) + host_ip
-    embed["description"] = '`' + msg + '`'
+    embed["title"] = "ShellBot {0} on {1}".format(status, host_ip)
+    embed["description"] = msg
     data["embeds"].append(embed)
     req =  request.Request(discordHook, data=bytes(json.dumps(data), 'UTF-8'))
     req.add_header('Content-Type', 'application/json')
@@ -226,6 +227,58 @@ def db_query(dbPath):
 
     return agents
 
+def poshc2_db_query(dbPath):
+    """Query PoshC2 sqlite database"""
+    try:
+        connection = sqlite3.connect(dbPath)
+        rows = connection.execute("SELECT * FROM Implants;")
+        agents = defaultdict(dict)
+
+        for row in rows:
+            if len(row) > 17:
+                agents[ImplantIndex]['ImplantIndex'] = row[0]
+                agents[ImplantIndex]['ImplantID'] = row[1]
+                agents[ImplantIndex]['RandomURI'] = row[2]
+                agents[ImplantIndex]['URLID'] = row[3]
+                agents[ImplantIndex]['User'] = row[4]
+                agents[ImplantIndex]['Hostname'] = row[5]
+                agents[ImplantIndex]['IpAddress'] = row[6]
+                agents[ImplantIndex]['Key'] = row[7]
+                agents[ImplantIndex]['FirstSeen'] = row[8]
+                agents[ImplantIndex]['LastSeen'] = row[9]
+                agents[ImplantIndex]['PID'] = row[10]
+                agents[ImplantIndex]['Arch'] = row[11]
+                agents[ImplantIndex]['Domain'] = row[12]
+                agents[ImplantIndex]['Alive'] = row[13]
+                agents[ImplantIndex]['Sleep'] = row[14]
+                agents[ImplantIndex]['ModsLoaded'] = row[15]
+                agents[ImplantIndex]['Pivot'] = row[16]
+                agents[ImplantIndex]['Label'] = row[17]
+            elif len(row) == 17:
+                ImplantIndex = row[0]
+                agents[ImplantIndex]['ImplantID'] = row[1]
+                agents[ImplantIndex]['RandomURI'] = 'NaN'
+                agents[ImplantIndex]['URLID'] = row[2]
+                agents[ImplantIndex]['User'] = row[3]
+                agents[ImplantIndex]['Hostname'] = row[4]
+                agents[ImplantIndex]['IpAddress'] = row[5]
+                agents[ImplantIndex]['Key'] = row[6]
+                agents[ImplantIndex]['FirstSeen'] = row[7]
+                agents[ImplantIndex]['LastSeen'] = row[8]
+                agents[ImplantIndex]['PID'] = row[9]
+                agents[ImplantIndex]['Arch'] = row[10]
+                agents[ImplantIndex]['Domain'] = row[11]
+                agents[ImplantIndex]['Alive'] = row[12]
+                agents[ImplantIndex]['Sleep'] = row[13]
+                agents[ImplantIndex]['ModsLoaded'] = row[14]
+                agents[ImplantIndex]['Pivot'] = row[15]
+                agents[ImplantIndex]['Label'] = row[16]
+        connection.close()
+    except sqlite3.OperationalError as e:
+        logger.warning("Error connecting to the database at {}".format(dbPath))
+        print(e)
+
+    return agents
 
 def msf_rpc_request(payload):
     #Make HTTP POST Request to MSF RPC Interface
@@ -330,56 +383,86 @@ def msf_rpc_get_session_list():
         return None
 
 def send_new_agent_message_discord(agentType, payload):
-    data = {}
+    data = defaultdict(lambda: defaultdict(dict))
     embed = {}
     #Send New Agent Message to Discord
     if args.verbose:
         logger.debug("New Discord agent message agent: {0}, payload: {1}".format(agentType, payload))
 
     if agentType == "Meterpreter":
-        data["tts"] = "true"
+        data["tts"] = True
         data["avatar_url"] = "https://ih1.redbubble.net/image.65324534.3912/raf,750x1000,075,t,fafafa:ca443f4786.u5.jpg"
         data["content"] = "New Metasploit Session"
         data["username"] = "ShellBot - " + host_name
         data["embeds"] = []
-        embed["color"] = "1108193"
-        embed["description"] = payload
+        embed["color"] = 1108193
+        embed["description"] = "Implant Details"
         embed["title"] = "[+] New " + agentType + " agent checked in to " + host_ip
+        embed["fields"] = []
+        fields = {"name": "Implant", "value": payload, "inline": True}
+        embed["fields"].append(fields)
         data["embeds"].append(embed)
     
     elif agentType == "Empire":
         data["avatar_url"] = "https://avatars2.githubusercontent.com/u/25492515?s=400&v=4"
         data["content"] = "New Empire Session"
         data["username"] = "ShellBot - " + host_name
-        data["tts"] = "true"
-        data["embeds"] = {}
-        embed["color"] = "1108193"
+        data["tts"] = True
+        data["embeds"] = []
+        embed["color"] = 1108193
         embed["description"] = payload
         embed["title"] = "[+] New " + agentType + " agent checked in to " + host_ip
+        embed["fields"] = []
+        fields = {"name": "Implant", "value": payload, "inline": True}
+        embed["fields"].append(fields)
         data["embeds"].append(embed)
 
     elif agentType.lower() == "covenant":
         data["avatar_url"] = "https://raw.githubusercontent.com/wiki/cobbr/Covenant/covenant.png"
         data["content"] = "New Covenant Session"
         data["username"] = "ShellBot - " + host_name
-        data["tts"] = "true"
-        data["embeds"] = {}
-        embed["color"] = "1108193"
-        embed["description"] = payload
+        data["tts"] = True
+        data["embeds"] = []
+        embed["color"] = 1108193
+        embed["description"] = "Implant Details"
         embed["title"] = "[+] New " + agentType + " agent checked in to " + host_ip
+        embed["fields"] = []
+        for k,v in payload.items():
+             fields = {}
+             fields['name'] = f"{k}"
+             fields['value'] = f"{v}"
+             fields['inline'] = True
+             embed['fields'].append(fields)
+        data["embeds"].append(embed)
+
+    elif agentType.lower() == "poshc2":
+        data["avatar_url"] = "https://raw.githubusercontent.com/nettitude/PoshC2/master/resources/images/PoshC2Logo.png"
+        data["content"] = "New PoshC2 Session"
+        data["username"] = "ShellBot - " + host_name
+        data["tts"] = True
+        data["embeds"] = []
+        embed["color"] = 1108193
+        embed["description"] = "Implant Details"
+        embed["title"] = "[+] New " + agentType + " agent checked in to " + host_ip
+        embed["fields"] = []
+        for k,v in payload.items():
+             fields = {}
+             fields['name'] = f"{k}"
+             fields['value'] = f"{v}"
+             fields['inline'] = True
+             embed['fields'].append(fields)
         data["embeds"].append(embed)
 
     logger.debug(data)
-    req =  request.Request(discordHook, data=bytes(json.dumps(data), 'UTF-8'))
+    req = request.Request(discordHook, data=bytes(json.dumps(data), 'UTF-8'))
     req.add_header('Content-Type', 'application/json')
-    req.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363')
+    req.add_header('User-Agent', 'Mozilla/5.0 (X11; Fedora; Linux x86_64; rv:83.0) Gecko/20100101 Firefox/83.0')
     response = request.urlopen(req)
     if args.verbose:
         logger.debug("{}".format(response.read().decode()))
         logger.debug("{}".format(response.getcode()))
     if response.getcode() == 204 or response.getcode() == 200:
         print(check_in + "New {} agent check in successfully posted to Discord".format(agentType))
-        logger.info("{}".format(payload.replace("\n", ", ")))
     else:
         logger.warning("Message not posted to Discord. HTTP Status Code: {}".format(response.getcode()))
 
@@ -419,6 +502,19 @@ def send_new_agent_message_slack(agentType, payload):
         total_data["channel"] = channel
         total_data["username"] = "ShellBot - {}".format(host_name)
         total_data["icon_emoji"] = ":covenant:"
+        total_data["text"] = "Woo!"
+        total_data["blocks"] = []
+        data = defaultdict(dict)
+        data["type"] = "section"
+        data["text"]["type"] = "mrkdwn"
+        data["text"]["text"] = text
+        total_data["blocks"].append(data)
+
+    elif agentType.lower() == "poshc2":
+        total_data = {}
+        total_data["channel"] = channel
+        total_data["username"] = "ShellBot - {}".format(host_name)
+        total_data["icon_emoji"] = ":poshc2:"
         total_data["text"] = "Woo!"
         total_data["blocks"] = []
         data = defaultdict(dict)
@@ -496,6 +592,7 @@ def parse_config(configFile):
     global covPort
     global covApiToken
     global teamsHook
+    global poshc2Db
 
     if args.verbose:
         logger.debug("Parsing config file at {}".format(configFile)) 
@@ -504,6 +601,7 @@ def parse_config(configFile):
         config = json.load(fp)
     count = 0
 
+    # Config for publishing notifications
     if config["slack"]:
         if config["slack"]["slackHook"] != None and config["slack"]["slackHook"] != "https://hooks.slack.com/services/<randomstuff>":
             slackHook = config["slack"]["slackHook"]
@@ -558,6 +656,24 @@ def parse_config(configFile):
     else:
         logger.warning("ShellBot will continue without Empire because configuration was not provided.")
         count += 1
+
+    poshc2_count = 0
+    if config["poshc2"]["enable"]:
+        e = config["poshc2"]["enable"]
+        if e == "True":
+            try:
+                with open('/var/poshc2/CURRENT_PROJECT', 'r') as CP:
+                    CURRENT_PROJECT = CP.readline().strip()
+                    poshc2Db = f'/var/poshc2/{CURRENT_PROJECT}/PowershellC2.SQLite'
+            except BaseException as e:
+                logger.warning("ShellBot will continue without PoshC2 because database was not found.")
+                poshc2_count += 1
+        else:
+            logger.warning("ShellBot will continue without PoshC2 because PoshC2 is disabled")
+            poshc2_count += 1
+    else:
+        logger.warning("ShellBot will continue without Empire because configuration was not provided.")
+        poshc2_count += 1
 
     msf_count = 0
     if "msf" in config:
@@ -619,7 +735,7 @@ def parse_config(configFile):
         logger.warning("ShellBot will continue without Covenant because configuration was not provided")
         count += 1
 
-    if count == 3:    
+    if count == 4:    
         logger.critical('No valid C2 configurations found. Exiting')
         exit(1)
 
@@ -660,6 +776,44 @@ def check_empire_agents(db):
                     if args.verbose:
                         logger.warning("Teams hook not provided, skipping")
 
+def check_poshc2_agents(db):
+    #Check for new PoshC2 Agents
+
+    agents = poshc2_db_query(db)
+
+    if args.verbose:
+        logger.debug("Currently checked in agents:")
+        for a in agents:
+            logger.debug("Implant ID: {0}\t First Seen: {1}".format(agents[a]['ImplantID'], agents[a]['FirstSeen']))
+    send_count = 0
+    for a in agents:
+        checkin = datetime.datetime.strptime(agents[a]['FirstSeen'], "%Y-%m-%d %H:%M:%S")
+        if a not in knownAgents["poshc2"]:
+            knownAgents["poshc2"].append(a)
+            msg = agents[a]
+            if checkin > runTime:
+                if discordHook is not None and \
+                        discordHook != "https://discord.com/gg/<randomstuff>":
+                    print('Sending to discord')
+                    send_new_agent_message_discord("poshc2", msg)
+                    send_count += 1
+                else:
+                    if args.verbose:
+                        logger.warning("Discord hook not provided, skipping")
+
+                if slackHook is not None and \
+                        slackHook != "https://hooks.slack.com/services/<randomstuff>":
+                    send_new_agent_message_slack("poshc2", msg)
+                else:
+                    if args.verbose:
+                        logger.warning("Slack hook not provided, skipping")
+
+                if teamsHook is not None and \
+                        teamsHook != "https://outlook.office.com/webhook/<randomstuff>":
+                    send_new_agent_message_teams("poshc2", msg)
+                else:
+                    if args.verbose:
+                        logger.warning("Teams hook not provided, skipping")
 
 def check_msf_agents():
     """Check to see if there are any new meterpreter sessions"""
@@ -743,11 +897,12 @@ def check_covenant_agents():
                         if grunt["guid"] not in knownAgents["covenant"] and active_time_local > runTime.astimezone():
                             knownAgents["covenant"].append(grunt["guid"])
                             logger.info(f"Covenant Grunt Check: New grunt checked in! GUID: {grunt['guid']}")
-                            msg = f"Grunt Name: {grunt['name']}\nCheckin Time: {active_time_local}\n"
-                            msg += f"System Info --\n"
-                            msg += f"\tHostname: {grunt['hostname']}\n\tIP Addr: {grunt['ipAddress']}\n"
-                            msg += f"\tDomain\\User: {grunt['userDomainName']}\\{grunt['userName']}\n"
-                            msg += f"\tOS Info: {grunt['operatingSystem']}"
+                            # msg = f"Grunt Name: {grunt['name']}\nCheckin Time: {active_time_local}\n"
+                            # msg += f"System Info --\n"
+                            # msg += f"\tHostname: {grunt['hostname']}\n\tIP Addr: {grunt['ipAddress']}\n"
+                            # msg += f"\tDomain\\User: {grunt['userDomainName']}\\{grunt['userName']}\n"
+                            # msg += f"\tOS Info: {grunt['operatingSystem']}"
+                            msg = grunt
                             logger.info(f"Covenant Grunt Check: New Grunt details:\n{msg}")
 
                             if slackHook is not None and slackHook != "" and slackHook != "https://hooks.slack.com/services/<randomstuff>":
@@ -772,33 +927,41 @@ def check_covenant_agents():
         else:
             logger.error("Covenant  Grunt Check Failed: Unexpected server response")
 
+def receiveSignal(signalNumber, frame):
+    print(f'Received: {signalNumber}')
+    raise SystemExit('Exiting')
 
 if __name__ == '__main__':
-    header = '"Content-Type: application/json"'
-    useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363"
+    signal.signal(signal.SIGTERM, receiveSignal)
+    # header = '"Content-Type: application/json"'
+    # useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363"
     ascii_art()
     get_IP()
     try:
-        conf = os.path.join(ssb_root, "shellbot.conf")
+        conf = os.path.join(ssb_root, "shellbot.json")
         parse_config(conf)
 
-        if (empireDb is not None) or (msfRpcToken is not None) or (covApiToken is not None):
-            # Post to Discord
-            logger.info("Posting to Discord")
-            post_msg_discord('Hello', 'Started', '65323')
-
-            # Post to Slack
-            logger.info("Posting to Slack")
-            post_msg_slack('Hello', 'Started')
+        if (empireDb is not None) or (msfRpcToken is not None) or (covApiToken is not None) or (poshc2Db is not None):
+            if discordHook is not None and discordHook != "https://discord.com/gg/<randomstuff>":
+                # Post to Discord
+                logger.info("Posting to Discord")
+                post_msg_discord('Hello', 'Started', '65323')
+            elif slackHook is not None and slackHook != "https://hooks.slack.com/services/<randomstuff>":
+                #Post to Slack
+                logger.info("Posting to Slack")
+                post_msg_slack('Hello', 'Started')
 
             logger.info("ShellBot started on {0}, {1}".format(host_name, host_ip))
             while True:
+                signal.signal(signal.SIGTERM, receiveSignal)
                 if empireDb is not None:
                     check_empire_agents(empireDb)
                 if msfRpcToken is not None:
                     check_msf_agents()
                 if covApiToken is not None:
                     check_covenant_agents()
+                if poshc2Db is not None:
+                    check_poshc2_agents(poshc2Db)
                 if args.verbose:
                     logger.debug("Sleeping for {0} seconds at {1}".format(sleepTime, datetime.datetime.now()))
                 time.sleep(sleepTime)
@@ -809,15 +972,36 @@ if __name__ == '__main__':
     except KeyboardInterrupt:
         logger.critical("User Interrupt! Quitting....")
         
-        # # Post on Discord
-        logger.debug("Posting to Discord")
-        post_msg_discord('Good-Bye', 'Exited', '16711680')
+        if discordHook is not None and discordHook != "https://discord.com/gg/<randomstuff>":
+            # Post to Discord
+            logger.info("Posting to Discord")
+            post_msg_discord('Good-Bye', 'Exited', '16711680')
         
-        # # Post on Slack
-        logger.debug("Posting to Slack")
-        post_msg_slack('Good-Bye', 'Exited')
+        elif slackHook is not None and slackHook != "https://hooks.slack.com/services/<randomstuff>":
+            #Post to Slack
+            logger.info("Posting to Slack")
+            post_msg_slack('Good-Bye', 'Exited')
+
     except SystemExit:
+        if discordHook is not None and discordHook != "https://discord.com/gg/<randomstuff>":
+            # Post to Discord
+            logger.info("Posting to Discord")
+            post_msg_discord('Good-Bye', 'Exited', '16711680')
+        
+        elif slackHook is not None and slackHook != "https://hooks.slack.com/services/<randomstuff>":
+            #Post to Slack
+            logger.info("Posting to Slack")
+            post_msg_slack('Good-Bye', 'Exited')
         pass
     except:
+        if discordHook is not None and discordHook != "https://discord.com/gg/<randomstuff>":
+            # Post to Discord
+            logger.info("Posting to Discord")
+            post_msg_discord('Good-Bye', 'Exited', '16711680')
+        
+        elif slackHook is not None and slackHook != "https://hooks.slack.com/services/<randomstuff>":
+            #Post to Slack
+            logger.info("Posting to Slack")
+            post_msg_slack('Good-Bye', 'Exited')
         logger.info("Please report this error to " + __maintainer__ + " by email at: " + __email__)
         raise

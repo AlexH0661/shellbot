@@ -1,11 +1,11 @@
 {
     "slack": {
-        "slackHook":"https://hooks.slack.com/services/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",
+        "slackHook":"https://hooks.slack.com/services/<randomstuff>",
         "botName": "ShellBot",
-        "channel": "#sandbox"
+        "channel": "#channel"
     },
     "discord": {
-        "discordHook": "https://discordapp.com/api/webhooks/694094785899790406/0do6H-BWUkJpxTqNvcZmWyd5z2jOGGw0eG1dkPjNhnlksP32vbFzRQqyFSN9jPMbCDB6?wait=true"
+        "discordHook": "https://discord.com/api/webhooks/694093870031437834/zrogzLqBleF73JvphaCmcVBuefByo5BKmZqiRU3uk5mHv2v2a8zmpAb1Opa2qpfTGxYE?wait=true"
     },
     "teams": {
         "teamsHook": "https://outlook.office.com/webhook/<randomstuff>"
@@ -14,18 +14,21 @@
         "sleepTime": "60"
     },
     "empire": {
-        "db": "/opt/Empire/data/empire.db"
+        "db": ""
     },
     "msf": {
-        "msfRpcHost": "127.0.0.1",
-        "msfRpcPort": "55552",
-        "msfRpcUser": "msf",
-        "msfRpcPass": "Password1"
+        "msfRpcHost": "",
+        "msfRpcPort": "",
+        "msfRpcUser": "",
+        "msfRpcPass": ""
     },
     "covenant": {
-        "host": "127.0.0.1",
-        "port": "7443",
+        "host": "",
+        "port": "",
         "user": "",
-        "pass": "password"
+        "pass": ""
+    },
+    "poshc2": {
+        "enable": "True"
     }
 }
