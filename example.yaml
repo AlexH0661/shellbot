@@ -1,0 +1,24 @@
+slack:
+  slackHook: ""
+  botName: ""
+  channel: ""
+discord:
+  discordHook: ""
+teams:
+  teamsHook: ""
+ShellBot:
+  sleepTime: 60
+empire:
+  db: ""
+msf:
+  host: ""
+  port: ""
+  user: ""
+  pass: ""
+covenant:
+  host: ""
+  port: ""
+  user: ""
+  pass: ""
+poshc2:
+  enabled: False
