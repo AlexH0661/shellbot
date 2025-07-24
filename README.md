@@ -1,5 +1,3 @@
 # shellbot
 
-ShellBot project
-
-This application is used to notify; Discord, Microsoft Teams, and Slack when; Metasploit, Empire or Covenant receives a shell
+This application is used to notify: Discord, Microsoft Teams, and Slack when: Metasploit, Empire, Covenant, or PoshC2 receives a shell
