@@ -49,10 +49,15 @@ def decode_dict(d):
 def rpc_request(payload):
     #Make HTTP POST Request to MSF RPC Interface
 
-    url = "http://" + rpc_host + ":" + rpc_port + "/api/1.1"
+    url = "http://" + rpc_host + ":" + str(rpc_port) + "/api/1.1"
+    logger.debug("Metasploit RPC URL: %s" % url)
     try:
-        req = request.Request(url, data=payload, headers={'content-type': 'binary/message-pack'})
-        response = request.urlopen(req)
+        response = request(
+            url=url,
+            method="GET",
+            data=payload,
+            headers={'content-type': 'binary/message-pack'}
+        )
         return response
 
     except BaseException as e:
@@ -65,7 +70,6 @@ def rpc_request(payload):
 
 def rpc_get_temp_auth_token():
     #Get a temporary authentication token from the Metasploit RPC Server
-    global VERBOSE
     global rpc_token
 
     payload = msgpack.packb(["auth.login", rpc_user, rpc_pass])
@@ -73,12 +77,8 @@ def rpc_get_temp_auth_token():
     try:
         content = msgpack.unpackb(response.read())
         content = decode_dict(content)
-    except BaseException as e:
-        if str(e) == None:
-            exit(1)
-    if response is not None:
-        if VERBOSE:
-            logger.debug("MSF RPC auth.login response:\n\tHTTP Status Code: {}".format(response.getcode()))
+        if response is not None:
+            logger.debug("MSF RPC auth.login response:\n\tHTTP Status Code: %s" % response.status_code)
             if response.headers['Content-Type'] == "binary/message-pack":
                 msf_rpc_message = content
                 logger.debug("MSF RPC Server Response: {}".format(msf_rpc_message))
@@ -86,13 +86,16 @@ def rpc_get_temp_auth_token():
                     logger.debug("MSF RPC Error: {}".format(msf_rpc_message['error_message']))
             else:
                 logger.debug("HTTP Server Response: {}".format(content))
-        if response.getcode() == 200:
-            if 'error' in content.keys():
-                logger.warning("MSF RPC Error: {}".format(content['error_message']))
-                logger.warning("Quitting")
-                sys.exit()
-            elif 'token' in content.keys():
-                msfRpcToken = content['token']
+            if response.status_code == 200:
+                if 'error' in content.keys():
+                    logger.warning("MSF RPC Error: {}".format(content['error_message']))
+                    logger.warning("Quitting")
+                    sys.exit()
+                elif 'token' in content.keys():
+                    rpc_token = content['token']
+    except BaseException as e:
+        if str(e) is None:
+            exit(1)
 
 def rpc_get_session_list():
     payload = msgpack.packb(["session.list", rpc_token])
@@ -116,9 +119,8 @@ def check_agents():
         sessions_result = rpc_get_session_list()
         if sessions_result is not None:
             for s in sessions_result:
-                if VERBOSE:
-                    logger.debug("Agent Information:\n{}".format(sessions_result[s]))
+                logger.debug("Agent Information:\n{}".format(sessions_result[s]))
                 if sessions_result[s]['uuid'] not in known_agents:
                     known_agents.append(sessions_result[s]['uuid'])
                     msg = "Agent: {0}\nInfo: {1}\nUsername: {2}\nTunnel Local: {3}\nTunnel Peer: {4}\nSession Port: {5}\nExploit: {6}\nPayload: {7}\nPlatform: {8}\nRoutes: {9}".format(sessions_result[s]['uuid'], sessions_result[s]['info'], sessions_result[s]['username'], sessions_result[s]['tunnel_local'], sessions_result[s]['tunnel_peer'], sessions_result[s]['session_port'], sessions_result[s]['via_exploit'], sessions_result[s]['via_payload'], sessions_result[s]['platform'], sessions_result[s]['routes'])
-                    notifications.send_new_agent_message_slack("Meterpreter", msg)
+                    notifications.send_new_agent_message("Meterpreter", msg)

@@ -1,0 +1,31 @@
+---
+# shellbot.yaml
+
+## ShellBot application config
+shellbot:
+  sleep-time: 60
+
+## Notitication configuration
+slack:
+  webhook:
+  channel:
+discord:
+  webhook:
+teams:
+  webhook:
+
+## C2 framework integration configuration
+posh:
+  db: /var/poshc2/test/PoshC2.SQLite
+empire:
+  db: /opt/Empire/data/empire.db
+msf:
+  host: 127.0.0.1
+  port: 55552
+  user: msf
+  pass:
+covenant:
+  host: 127.0.0.1
+  port: 7443
+  user:
+  pass:

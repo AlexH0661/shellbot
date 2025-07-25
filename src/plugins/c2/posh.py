@@ -1,30 +1,27 @@
-def check_agents(db_path):
-    """Query sqlite database"""
+import logging
+import sqlite3
 
-    agents = {}
+from utils import notifications
 
+logger = logging.getLogger(__name__)
+
+known_agents = []
+db = None
+
+def check_agents():
     try:
-        connection = sqlite3.connect(db_path)
-        rs = connection.execute("SELECT session_id, checkin_time, name, external_ip, internal_ip, username, hostname, "
-                                "os_details, high_integrity, process_name, process_id FROM agents;")
-
-        for r in rs:
-            agents[r[0]] = {'checkin_time': r[1],
-                            'session_id': r[0],
-                            'name': r[2],
-                            'external_ip': r[3],
-                            "internal_ip": r[4],
-                            "username": r[5],
-                            "hostname": r[6],
-                            "os_details": r[7],
-                            "high_integrity": str(r[8]),
-                            "process_name": r[9],
-                            "process_id": r[10]
-                            }
-
+        connection = sqlite3.connect(db)
+        cur = connection.cursor()
+        res = cur.execute('SELECT id, last_seen, hostname, ip_address, user, domain, process_name, type FROM implants;')
+        for r in res.fetchall():
+            logger.debug(r)
+            if r not in known_agents:
+                known_agents.append(r)
+                msg = "Implant ID: {0}\nCheckin Time: {1}".format(r["id"], r["last_seen"])
+                notifications.send_new_agent_message("PoshC2", msg)
         connection.close()
     except sqlite3.OperationalError as e:
-        logger.warning("Error connecting to the database at {}".format(dbPath))
+        logger.warning("Error connecting to the database at {}".format(db))
         print(e)
 
-    return agents
+    return known_agents

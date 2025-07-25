@@ -1,6 +1,7 @@
 ### Python template
 # Project specific
 logs
+shellbot.yaml
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

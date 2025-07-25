@@ -15,7 +15,7 @@ import time
 
 import yaml
 
-from plugins.c2 import empire, metasploit, covenant
+from plugins.c2 import empire, metasploit, covenant, posh
 
 try:
     import msgpack
@@ -54,24 +54,21 @@ cur_dir = os.getcwd()
 os.makedirs('{}/logs'.format(cur_dir), exist_ok=True)
 
 # Logging configuration
+logFormatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logger = logging.getLogger()
+
 if LOG_TO_FILE:
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format='%(asctime)s [%(name)s / %(levelname)s]: %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S',
-        filename='{0}/logs/{1}.log'.format(cur_dir, formatted_datetime),
-        filemode='w'
-    )
-console = logging.StreamHandler()
+    fileHandler = logging.FileHandler('{0}/logs/{1}.log'.format(cur_dir, formatted_datetime))
+    fileHandler.setFormatter(logFormatter)
+    logger.addHandler(fileHandler)
+consoleHandler = logging.StreamHandler()
+consoleHandler.setFormatter(logFormatter)
+logger.addHandler(consoleHandler)
 if args.verbose:
-    console.setLevel(logging.DEBUG)
+    logger.setLevel(logging.DEBUG)
     VERBOSE = True
 else:
-    console.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-console.setFormatter(formatter)
-logging.getLogger('').addHandler(console)
-logger = logging.getLogger('')
+    logger.setLevel(logging.INFO)
 
 # Colours
 note = "\033[0;0;33m[-]\033[0m "
@@ -84,17 +81,13 @@ check_in = "\033[0;0;92m[+]\033[0m "
 def ascii_art():
     art = "\033[0;0;36m"
     art += r"""
-ShellBot
+shellbot
 """
     art += "\033[0m"
     art += """
-Author: {0}
-Maintainer: {1}
-Email: {2}
-Last Updated By: {3}
-Version: {4}
-
-""".format(__author__, __maintainer__, __email__, __updated__, __version__)
+Version: %s
+Verbose Logging: %s
+""" % (__version__, VERBOSE)
     print(art)
 
 
@@ -104,10 +97,8 @@ def get_IP():
         global HOST_IP
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        HOST_NAME = socket.gethostname()
+        HOST_NAME = socket.getfqdn()
         HOST_IP = s.getsockname()[0]
-        logger.debug(HOST_NAME)
-        logger.debug(HOST_IP)
     except BaseException as e:
         logger.warning(e)
 
@@ -125,6 +116,8 @@ def parse_config():
 
     with open("shellbot.yaml") as fp:
         config = yaml.safe_load(fp)
+
+    logger.debug("Parsing config")
     count = 0
 
     # If no notification sources are defined, we log to stdout and file system
@@ -173,6 +166,7 @@ def parse_config():
             e = config["empire"]["db"]
             if os.path.isfile(os.path.join(WORKING_DIRECTORY, e)):
                 empire.empireDb = os.path.join(WORKING_DIRECTORY, e)
+                logger.info("Empire integration enabled")
                 EMPIRE_ENABLED = True
             else:
                 logger.warning("ShellBot will continue without Empire because database was not found at {}".format(
@@ -180,35 +174,36 @@ def parse_config():
         else:
             logger.warning("ShellBot will continue without Empire because database path not provided.")
     else:
-        logger.warning("ShellBot will continue without Empire because configuration was not provided.")
+        logger.debug("ShellBot will continue without Empire because configuration was not provided.")
 
     msf_count = 0
     if "msf" in config:
-        if config["msf"]["rpc_host"]:
-            metasploit.rpc_host = config["msf"]["rpc_host"]
+        if "host" in config["msf"]:
+            metasploit.rpc_host = config["msf"]["host"]
         else:
             logger.warning("ShellBot will continue without Metasploit Framework because the host was not provided")
             msf_count += 1
-        if config["msf"]["rpc_port"]:
-            metasploit.rpc_port = config["msf"]["rpc_port"]
+        if "port" in config["msf"]:
+            metasploit.rpc_port = config["msf"]["port"]
         else:
             logger.warning("ShellBot will continue without Metasploit Framework because the port was not provided")
             msf_count += 1
-        if config["msf"]["rpc_user"]:
-            metasploit.rpc_user = config["msf"]["rpc_user"]
+        if "user" in config["msf"]:
+            metasploit.rpc_user = config["msf"]["user"]
         else:
             logger.warning("ShellBot will continue without Metasploit Framework because the user was not provided")
             msf_count += 1
-        if config["msf"]["rpc_pass"] != None and config["msf"]["rpc_pass"] != "<password>":
-            metasploit.rpc_pass = config["msf"]["rpc_pass"]
+        if "pass" in config["msf"]:
+            metasploit.rpc_pass = config["msf"]["pass"]
         else:
             logger.warning("ShellBot will continue without Metasploit Framework because the password was not provided")
             msf_count += 1
         if msf_count == 0:
             metasploit.rpc_get_temp_auth_token()
+            logger.info("Metasploit integration enabled")
             METASPLOIT_ENABLED = True
     else:
-        logger.warning("ShellBot will continue without Metasploit because configuration was not provided.")
+        logger.debug("ShellBot will continue without Metasploit because configuration was not provided.")
 
     cov_count = 0
     if "covenant" in config:
@@ -230,25 +225,45 @@ def parse_config():
         if config["covenant"]["pass"]:
             covenant.password = config["covenant"]["pass"]
         else:
-            logger.warning("ShellBot will continue without Covenant because the password was not provided")
+            logger.debug("ShellBot will continue without Covenant because the password was not provided")
             cov_count += 1
         if cov_count == 0:
             covenant.api_token = covenant.api_auth(covenant.user, covenant.password)
+            logger.info("Covenant integration enabled")
             COVENANT_ENABLED = True
     else:
-        logger.warning("ShellBot will continue without Covenant because configuration was not provided")
+        logger.debug("ShellBot will continue without Covenant because configuration was not provided")
 
-    if not METASPLOIT_ENABLED and not COVENANT_ENABLED and not EMPIRE_ENABLED:
+    posh_count = 0
+    if "posh" in config:
+        if "db" in config["posh"]:
+            e = config["posh"]["db"]
+            if os.path.isfile(os.path.join(WORKING_DIRECTORY, e)):
+                posh.db = os.path.join(WORKING_DIRECTORY, e)
+            else:
+                logger.warning("ShellBot will continue without PoshC2 because database was not found at {}".format(
+                    os.path.join(WORKING_DIRECTORY, e)))
+                posh_count += 1
+        else:
+            logger.warning("ShellBot will continue without PoshC2 because database path not provided.")
+            posh_count += 1
+        if posh_count == 0:
+            logger.info("PoshC2 integration enabled")
+            POSH_ENABLED = True
+    else:
+        logger.debug("ShellBot will continue without PoshC2 because configuration was not provided.")
+
+    if not METASPLOIT_ENABLED and not COVENANT_ENABLED and not EMPIRE_ENABLED and not POSH_ENABLED:
         logger.critical('No valid C2 configurations found. Exiting')
         exit(1)
 
 
 def main():
-    parse_config()
     header = '"Content-Type: application/json"'
     useragent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.102 Safari/537.36 Edge/18.18363"
     ascii_art()
     get_IP()
+    parse_config()
     try:
         if DISCORD_ENABLED:
             logger.info("Posting to Discord")
@@ -262,18 +277,24 @@ def main():
             logger.info("Posting to Teams")
             teams.post_msg('Hello', 'Started', '65323')
 
-        logger.info("ShellBot started on {0}, {1}".format(host_name, host_ip))
+        logger.info("ShellBot started on {0} [{1}]".format(HOST_NAME, HOST_IP))
 
         while True:
             if EMPIRE_ENABLED:
-                empire.check_agents(empireDb)
+                empire_agents = empire.check_agents()
+                logger.debug("Empire Agents: %s" % (empire_agents))
             if METASPLOIT_ENABLED:
-                metasploit.check_agents()
+                metasploit_agents = metasploit.check_agents()
+                logger.debug("Metasploit Agents: %s" % metasploit_agents)
             if COVENANT_ENABLED:
-                covenant.check_agents()
+                covenant_agents = covenant.check_agents()
+                logger.debug("Covenant Agents: %s" % (covenant_agents))
+            if POSH_ENABLED:
+                posh_agents = posh.check_agents()
+                logger.debug("Posh Agents: %s" % (posh_agents))
             if args.verbose:
-                logger.debug("Sleeping for {0} seconds at {1}".format(sleepTime, datetime.datetime.now()))
-            time.sleep(sleepTime)
+                logger.debug("Sleeping for {0} seconds at {1}".format(SLEEP_TIME, datetime.datetime.now()))
+            time.sleep(SLEEP_TIME)
 
     except KeyboardInterrupt:
         logger.critical("User Interrupt! Quitting....")
